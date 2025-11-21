@@ -8,8 +8,8 @@ This template should help get you started developing with Tauri, React and Types
 
 # About
 
-Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, and books. Will never show you where to read and find them.
-Does NOT support music, audiobooks, etc.
+Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, books, etc. Will never show you where to read or find them.
+Supports All forms of readable/watchable media, does NOT include music.
 
 Automatically finds the cover pictures, summaries, and ratings for you from the databases.
 
