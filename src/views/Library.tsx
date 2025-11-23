@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useMemo, useRef } from 'react';
 import { MediaItem } from '../types';
 import { Icons } from '../components/Icons';
 
@@ -12,9 +11,19 @@ interface LibraryProps {
   viewMode: 'grid' | 'list' | 'compact';
   onViewModeChange: (mode: 'grid' | 'list' | 'compact') => void;
   gridColumns: number;
+  onOpenSearch: () => void;
 }
 
 type SortOption = 'updated' | 'added' | 'rating' | 'title';
+
+// CACHED ITEM INTERFACE
+interface CachedItemRect {
+  id: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
 
 export const Library: React.FC<LibraryProps> = ({ 
   library, 
@@ -24,9 +33,10 @@ export const Library: React.FC<LibraryProps> = ({
   availableStatuses,
   viewMode,
   onViewModeChange,
-  gridColumns
+  gridColumns,
+  onOpenSearch
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  // Removed unused searchQuery
   const [filterType, setFilterType] = useState<string>('All');
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [sortBy, setSortBy] = useState<SortOption>('updated');
@@ -37,16 +47,16 @@ export const Library: React.FC<LibraryProps> = ({
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
-  // REFS (Direct DOM access for speed)
+  // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
   
-  // LOGIC REFS
-  // "start": The absolute pixel coordinates inside the scrollable div (e.g., y = 5000px)
-  const startPoint = useRef<{x: number, y: number} | null>(null);
-  // "current": The screen coordinates of the mouse
-  const currentMouse = useRef<{x: number, y: number} | null>(null);
-  const rafRef = useRef<number | null>(null);
+  // --- PERFORMANCE REFS ---
+  const cachedContainerRect = useRef<DOMRect | null>(null);
+  const cachedItems = useRef<CachedItemRect[]>([]);
+  
+  const dragStartDoc = useRef<{x: number, y: number} | null>(null);
+  const currentMouseDoc = useRef<{x: number, y: number} | null>(null);
   
   const dragStartTime = useRef<number>(0);
   const initialSelectionSnapshot = useRef<Set<string>>(new Set());
@@ -54,8 +64,8 @@ export const Library: React.FC<LibraryProps> = ({
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
   const isDragging = useRef(false);
   const clickedItemRef = useRef<string | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-  // --- HELPERS ---
   const getTitleClass = (title: string, mode: 'grid' | 'list') => {
     const len = title.length;
     if (mode === 'grid') {
@@ -63,7 +73,6 @@ export const Library: React.FC<LibraryProps> = ({
         if (len > 25) return 'text-sm leading-tight line-clamp-3';
         return 'text-lg font-bold leading-tight line-clamp-2';
     }
-    if (len > 60) return 'text-sm font-bold';
     return 'text-base font-bold';
   };
 
@@ -71,14 +80,10 @@ export const Library: React.FC<LibraryProps> = ({
     let result = library.filter(item => {
       const matchesType = filterType === 'All' || item.type === filterType;
       const matchesStatus = filterStatus === 'All' || item.status === filterStatus;
-      const matchesSearch = 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        item.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      // Removed search query check since it's handled globally now
       const matchesAuthor = !authorFilter || item.author?.toLowerCase().includes(authorFilter.toLowerCase());
-      
-      return matchesType && matchesStatus && matchesSearch && matchesAuthor;
+      return matchesType && matchesStatus && matchesAuthor;
     });
-
     return result.sort((a, b) => {
       let valA: any, valB: any;
       switch(sortBy) {
@@ -91,7 +96,7 @@ export const Library: React.FC<LibraryProps> = ({
       if (valA > valB) return sortDesc ? -1 : 1;
       return 0;
     });
-  }, [library, filterType, filterStatus, searchQuery, sortBy, sortDesc, authorFilter]);
+  }, [library, filterType, filterStatus, sortBy, sortDesc, authorFilter]);
 
   const handleRandomPick = () => {
     const pool = library.filter(i => i.status === 'Planning');
@@ -106,108 +111,48 @@ export const Library: React.FC<LibraryProps> = ({
     setSelectedIds(new Set());
   };
 
-  // --- SELECTION ENGINE ---
-
-  // 1. VISUAL UPDATE: Must be SYNCHRONOUS for zero scroll lag
+  // --- 1. UPDATE VISUAL BOX (Sync) ---
   const updateVisualBox = () => {
-    if (!startPoint.current || !currentMouse.current || !containerRef.current || !selectionBoxRef.current) return null;
+    if (!dragStartDoc.current || !currentMouseDoc.current || !selectionBoxRef.current) return null;
 
-    const container = containerRef.current;
-    const containerRect = container.getBoundingClientRect();
+    const startX = dragStartDoc.current.x;
+    const startY = dragStartDoc.current.y;
+    const curX = currentMouseDoc.current.x;
+    const curY = currentMouseDoc.current.y;
 
-    // Calculate Absolute End Point (Mouse Screen X - Container Left + Scroll Left)
-    const endX = currentMouse.current.x - containerRect.left + container.scrollLeft;
-    const endY = currentMouse.current.y - containerRect.top + container.scrollTop;
+    const left = Math.min(startX, curX);
+    const top = Math.min(startY, curY);
+    const width = Math.abs(curX - startX);
+    const height = Math.abs(curY - startY);
 
-    const startX = startPoint.current.x;
-    const startY = startPoint.current.y;
-
-    // Determine Box Geometry
-    const left = Math.min(startX, endX);
-    const top = Math.min(startY, endY);
-    const width = Math.abs(endX - startX);
-    const height = Math.abs(endY - startY);
-
-    // Update DOM Directly (Fastest possible update)
     const style = selectionBoxRef.current.style;
     style.display = 'block';
     style.transform = `translate3d(${left}px, ${top}px, 0)`;
     style.width = `${width}px`;
     style.height = `${height}px`;
 
-    // Return the box coordinates for logic processing
-    return { left, top, width, height, containerRect };
+    return { left, top, right: left + width, bottom: top + height };
   };
 
-  // 2. LOGIC UPDATE: Can be Throttled
-  const requestLogicUpdate = () => {
-      if (rafRef.current) return; // Skip if frame is already scheduled
-      
-      rafRef.current = requestAnimationFrame(() => {
-          const data = updateVisualBox(); // Get latest box data
-          if (data) performSelectionLogic(data);
-          rafRef.current = null; // CLEAR THE LOCK
-      });
-  };
-
-  const performSelectionLogic = (data: { left: number, top: number, width: number, height: number, containerRect: DOMRect }) => {
-    if (!containerRef.current) return;
-    const { left, top, width, height, containerRect } = data;
-    const container = containerRef.current;
-
-    // Calculate absolute box bounds
-    const box = { 
-        left, 
-        top, 
-        right: left + width, 
-        bottom: top + height 
-    };
-
+  // --- 2. SELECTION LOGIC (Async/Throttled) ---
+  const performSelectionLogic = (box: { left: number, top: number, right: number, bottom: number }) => {
     const intersectingIds: string[] = [];
 
-    itemRefs.current.forEach((el, id) => {
-        // Get Item Rect in Screen Space
-        const r = el.getBoundingClientRect();
-        
-        // Convert Item to Absolute Space to match box
-        const itemAbs = {
-            left: r.left - containerRect.left + container.scrollLeft,
-            top: r.top - containerRect.top + container.scrollTop,
-            right: r.right - containerRect.left + container.scrollLeft,
-            bottom: r.bottom - containerRect.top + container.scrollTop,
-        };
-
+    for (const item of cachedItems.current) {
         const intersects = !(
-            box.left > itemAbs.right ||
-            box.right < itemAbs.left ||
-            box.top > itemAbs.bottom ||
-            box.bottom < itemAbs.top
+            box.left > item.right ||
+            box.right < item.left ||
+            box.top > item.bottom ||
+            box.bottom < item.top
         );
-
-        if (intersects) intersectingIds.push(id);
-    });
-
-    // Determine Operation Mode (Add vs Remove) on first drag frame
-    if (selectionOperationMode.current === null && intersectingIds.length > 0) {
-        let firstId = intersectingIds[0];
-        let minDist = Infinity;
-        const startX = startPoint.current!.x;
-        const startY = startPoint.current!.y;
-
-        intersectingIds.forEach(id => {
-            const el = itemRefs.current.get(id);
-            if(el) {
-                const r = el.getBoundingClientRect();
-                const cx = r.left - containerRect.left + container.scrollLeft + r.width/2;
-                const cy = r.top - containerRect.top + container.scrollTop + r.height/2;
-                const d = Math.hypot(cx - startX, cy - startY);
-                if(d < minDist) { minDist = d; firstId = id; }
-            }
-        });
-        selectionOperationMode.current = initialSelectionSnapshot.current.has(firstId) ? 'remove' : 'add';
+        if (intersects) intersectingIds.push(item.id);
     }
 
-    // Apply Selection
+    if (selectionOperationMode.current === null && intersectingIds.length > 0) {
+         const firstId = intersectingIds[0]; 
+         selectionOperationMode.current = initialSelectionSnapshot.current.has(firstId) ? 'remove' : 'add';
+    }
+
     const nextSelected = new Set(initialSelectionSnapshot.current);
     const mode = selectionOperationMode.current;
     if (mode === 'add') intersectingIds.forEach(id => nextSelected.add(id));
@@ -216,13 +161,14 @@ export const Library: React.FC<LibraryProps> = ({
     setSelectedIds(nextSelected);
   };
 
-  // --- EVENT HANDLERS ---
-
+  // --- HANDLERS ---
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, input, select, a, [data-no-drag]')) return;
-    const container = e.currentTarget as HTMLElement;
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
     const rect = container.getBoundingClientRect();
-    if (e.clientX > rect.right - 20) return; // Ignore scrollbar
+    if (e.clientX > rect.right - 20) return; 
 
     const itemEl = (e.target as HTMLElement).closest('[data-media-item]');
     clickedItemRef.current = itemEl ? itemEl.getAttribute('data-media-item') : null;
@@ -230,13 +176,28 @@ export const Library: React.FC<LibraryProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
-    // Store Start Position in ABSOLUTE coordinates (accounting for current scroll)
-    startPoint.current = {
-        x: e.clientX - rect.left + container.scrollLeft,
-        y: e.clientY - rect.top + container.scrollTop
-    };
-    currentMouse.current = { x: e.clientX, y: e.clientY };
+    // Cache Layout
+    cachedContainerRect.current = rect;
+    cachedItems.current = [];
+    
+    itemRefs.current.forEach((el, id) => {
+        const itemTop = el.offsetTop; 
+        const itemLeft = el.offsetLeft;
+        cachedItems.current.push({
+            id,
+            left: itemLeft,
+            top: itemTop,
+            right: itemLeft + el.offsetWidth,
+            bottom: itemTop + el.offsetHeight
+        });
+    });
 
+    const startX = e.clientX - rect.left + container.scrollLeft;
+    const startY = e.clientY - rect.top + container.scrollTop;
+    
+    dragStartDoc.current = { x: startX, y: startY };
+    currentMouseDoc.current = { x: startX, y: startY };
+    
     dragStartTime.current = Date.now();
     isDragging.current = false;
     initialSelectionSnapshot.current = new Set(selectedIds);
@@ -247,12 +208,16 @@ export const Library: React.FC<LibraryProps> = ({
   };
 
   const handleGlobalMouseMove = (e: MouseEvent) => {
-    if (!startPoint.current) return;
+    if (!dragStartDoc.current || !containerRef.current || !cachedContainerRect.current) return;
 
-    // Update mouse tracker
-    currentMouse.current = { x: e.clientX, y: e.clientY };
+    const container = containerRef.current;
+    const rect = cachedContainerRect.current; 
+
+    const curX = e.clientX - rect.left + container.scrollLeft;
+    const curY = e.clientY - rect.top + container.scrollTop;
     
-    // Threshold Check
+    currentMouseDoc.current = { x: curX, y: curY };
+
     if (!isDragging.current) {
         const timeElapsed = Date.now() - dragStartTime.current;
         const isIntentional = timeElapsed > 150 || (Math.abs(e.movementX) + Math.abs(e.movementY) > 5);
@@ -260,42 +225,44 @@ export const Library: React.FC<LibraryProps> = ({
             isDragging.current = true;
             setIsSelectionMode(true);
             if (clickedItemRef.current) {
-                const isSelected = initialSelectionSnapshot.current.has(clickedItemRef.current);
-                selectionOperationMode.current = isSelected ? 'remove' : 'add';
+                 const isSelected = initialSelectionSnapshot.current.has(clickedItemRef.current);
+                 selectionOperationMode.current = isSelected ? 'remove' : 'add';
             }
         } else { return; }
     }
 
-    // Update Visuals Synchrounously (No Lag)
-    updateVisualBox();
-    // Request Logic Update (Async)
-    requestLogicUpdate();
+    const box = updateVisualBox();
+    
+    if (box && !rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+            performSelectionLogic(box);
+            rafRef.current = null;
+        });
+    }
   };
 
-  // SCROLL EVENT: Update Visuals SYNCHRONOUSLY
   const handleScroll = () => {
-    if (isDragging.current) {
-        updateVisualBox(); // Forces the box to redraw at new scroll position immediately
-        requestLogicUpdate(); // Queues logic check for next frame
-    }
+      if (isDragging.current) {
+          const box = updateVisualBox();
+          if (box && !rafRef.current) {
+              rafRef.current = requestAnimationFrame(() => {
+                  performSelectionLogic(box);
+                  rafRef.current = null;
+              });
+          }
+      }
   };
 
   const handleGlobalMouseUp = (e: MouseEvent) => {
     document.removeEventListener('mousemove', handleGlobalMouseMove);
     document.removeEventListener('mouseup', handleGlobalMouseUp);
-    
-    // FIX: Ensure RAF loop is killed and reset
-    if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     if (selectionBoxRef.current) {
         selectionBoxRef.current.style.display = 'none';
     }
 
     if (!isDragging.current) {
-        // Click Handling
         if (clickedItemRef.current) {
             const id = clickedItemRef.current;
             if (e.ctrlKey || e.metaKey) {
@@ -310,21 +277,21 @@ export const Library: React.FC<LibraryProps> = ({
                 onSelectItem(id);
             }
         } else {
-             // Background click -> Clear
              if (!e.ctrlKey && !e.shiftKey) {
                 setSelectedIds(new Set());
                 setIsSelectionMode(false);
             }
         }
     }
-    
-    startPoint.current = null;
+    dragStartDoc.current = null;
+    cachedContainerRect.current = null;
+    cachedItems.current = [];
     isDragging.current = false;
   };
 
   const handleMassDelete = () => {
     if (selectedIds.size === 0) return;
-    if (window.confirm(`Are you sure you want to delete ${selectedIds.size} items?`)) {
+    if (window.confirm(`Delete ${selectedIds.size} items?`)) {
       onBulkDelete(Array.from(selectedIds));
       setSelectedIds(new Set());
       setIsSelectionMode(false);
@@ -344,15 +311,8 @@ export const Library: React.FC<LibraryProps> = ({
 
   const renderViewModeToggle = () => (
     <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-1 ml-2 flex-shrink-0">
-      <button onClick={() => onViewModeChange('grid')} className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} data-no-drag>
-        <Icons.LayoutGrid className="w-4 h-4" />
-      </button>
-      <button onClick={() => onViewModeChange('list')} className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} data-no-drag>
-        <Icons.LayoutList className="w-4 h-4" />
-      </button>
-      <button onClick={() => onViewModeChange('compact')} className={`p-1.5 rounded transition-colors ${viewMode === 'compact' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} data-no-drag>
-        <Icons.AlignLeft className="w-4 h-4" />
-      </button>
+      <button onClick={() => onViewModeChange('grid')} className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} data-no-drag title="Grid View"><Icons.LayoutGrid className="w-4 h-4" /></button>
+      <button onClick={() => onViewModeChange('list')} className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} data-no-drag title="List View"><Icons.LayoutList className="w-4 h-4" /></button>
     </div>
   );
 
@@ -362,7 +322,7 @@ export const Library: React.FC<LibraryProps> = ({
         <img 
           src={item.coverUrl} 
           alt={item.title}
-          className={`${containerClass} object-cover transition-transform duration-500 group-hover:scale-105 will-change-transform`}
+          className={`${containerClass} object-cover will-change-transform`}
           loading="lazy"
           draggable={false}
         />
@@ -389,24 +349,21 @@ export const Library: React.FC<LibraryProps> = ({
         className="w-full h-full flex flex-col p-6 space-y-6 overflow-y-auto relative select-none [scrollbar-gutter:stable] focus:outline-none"
         onMouseDown={handleMouseDown}
     >
-      {/* 
-          SELECTION BOX 
-          Absolute positioned. Z-50 to stay on top.
-          Pointer events none so it doesn't block mouse clicks.
-      */}
-      <div 
-        ref={selectionBoxRef}
-        className="absolute z-50 bg-blue-500/20 border border-blue-400 pointer-events-none"
-        style={{ display: 'none', top: 0, left: 0, width: 0, height: 0, willChange: 'transform, width, height' }}
-      />
+      <div ref={selectionBoxRef} className="absolute z-50 bg-blue-500/20 border border-blue-400 pointer-events-none" style={{ display: 'none', top: 0, left: 0, width: 0, height: 0, willChange: 'transform, width, height' }} />
 
       <div className="flex flex-col gap-4 p-4 bg-slate-800 rounded-xl border border-slate-700 shadow-sm flex-shrink-0" data-no-drag>
-        {/* Toolbar ... */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Search titles, tags..." className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-osmanthus-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          </div>
+          
+          {/* GLOBAL SEARCH BUTTON */}
+          <button 
+             onClick={onOpenSearch}
+             className="flex-1 flex items-center gap-3 w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-400 hover:text-white hover:border-slate-600 transition-colors text-left group"
+          >
+             <Icons.Search className="w-4 h-4 group-hover:text-osmanthus-400 transition-colors" />
+             <span className="text-sm">Search library...</span>
+             <span className="ml-auto text-[10px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Ctrl+K</span>
+          </button>
+
           <div className="flex gap-2 flex-wrap items-center justify-end flex-shrink-0">
              {isSelectionMode ? (
                <>
@@ -420,6 +377,7 @@ export const Library: React.FC<LibraryProps> = ({
                </>
              )}
              <button onClick={() => setShowAdvanced(!showAdvanced)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium whitespace-nowrap transition-colors ${showAdvanced ? 'bg-osmanthus-600 text-white border-osmanthus-600' : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'}`}><Icons.Filter className="w-4 h-4" /> Filters</button>
+             
              <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-1 relative">
                 <select className="bg-slate-900 text-sm text-white px-2 py-1.5 outline-none cursor-pointer rounded appearance-none pr-8" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortOption)}><option value="updated">Last Updated</option><option value="added">Date Added</option><option value="rating">Rating</option><option value="title">Title</option></select>
                 <Icons.Sort className={`absolute right-2 w-4 h-4 text-slate-400 pointer-events-none transition-transform ${sortDesc ? '' : 'rotate-180'}`} />
@@ -447,6 +405,7 @@ export const Library: React.FC<LibraryProps> = ({
           {filteredItems.map((item) => {
             const isSelected = selectedIds.has(item.id);
             
+            // --- GRID VIEW ---
             if (viewMode === 'grid') {
               return (
                 <div 
@@ -461,9 +420,13 @@ export const Library: React.FC<LibraryProps> = ({
                     }
                   `}
                 >
-                  <div className="relative aspect-[2/3] overflow-hidden bg-slate-900 pointer-events-none">
+                  <div className="relative aspect-[2/3] overflow-hidden bg-slate-950 pointer-events-none">
                     {renderCover(item)}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-90" />
+                    <div 
+                      className="absolute inset-0 opacity-90 pointer-events-none"
+                      style={{ background: 'linear-gradient(to top, #0f172a 0%, #0f172a 15%, transparent 60%)' }} 
+                    />
+                    
                     {isSelectionMode && (
                       <div className={`absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
                         {isSelected ? <div className="bg-osmanthus-500 text-white rounded-full p-2 shadow-lg transform scale-125"><Icons.Check className="w-8 h-8" /></div> : <div className="bg-slate-900/80 text-slate-400 rounded-full p-2 border-2 border-slate-500"><Icons.Square className="w-6 h-6" /></div>}
@@ -496,6 +459,7 @@ export const Library: React.FC<LibraryProps> = ({
               );
             }
 
+            // --- LIST VIEW ---
             if (viewMode === 'list') {
                return (
                 <div 
@@ -526,24 +490,7 @@ export const Library: React.FC<LibraryProps> = ({
                );
             }
 
-            return (
-              <div 
-                  key={item.id}
-                  ref={el => { if(el) itemRefs.current.set(item.id, el); else itemRefs.current.delete(item.id); }}
-                  data-media-item={item.id}
-                  className={`
-                    group flex items-center gap-4 bg-slate-800 rounded px-4 py-2 border transition-all duration-200 cursor-pointer
-                    ${isSelected 
-                      ? 'border-osmanthus-500 ring-4 ring-osmanthus-500/50 bg-slate-800/90 z-10' 
-                      : 'border-slate-700 hover:border-osmanthus-500 hover:bg-slate-700/30'
-                    }
-                  `}
-                >
-                   {isSelectionMode && <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-osmanthus-500 border-osmanthus-500' : 'border-slate-500'}`}>{isSelected && <Icons.Check className="w-3 h-3 text-white" />}</div>}
-                   <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-slate-900 pointer-events-none">{item.coverUrl ? <img src={item.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-800"><span className="text-[8px] text-slate-500">N/A</span></div>}</div>
-                   <div className="flex-1 min-w-0 flex items-center gap-4 pointer-events-none"><div className="flex-1 min-w-0 flex items-center gap-2">{item.favorite && <Icons.Star className="w-3 h-3 text-red-500 fill-current flex-shrink-0" />}<h3 className="text-white font-medium text-sm truncate">{item.title}</h3></div><span className="text-xs text-slate-500 w-20 truncate hidden sm:block">{item.type}</span><span className={`text-[10px] font-bold uppercase w-24 truncate ${getStatusColor(item.status)}`}>{item.status}</span><div className="w-24 text-right text-xs text-slate-400 font-mono hidden sm:block">{item.progress} / {item.total || '?'}</div><div className="w-12 text-right text-yellow-500 text-xs font-bold flex items-center justify-end gap-1"><Icons.Star className="w-3 h-3 fill-current" /> {item.rating > 0 ? item.rating : '-'}</div></div>
-              </div>
-            );
+            return null;
           })}
         </div>
       )}

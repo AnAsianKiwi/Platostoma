@@ -9,6 +9,8 @@ import { Library } from './views/Library';
 import { MediaDetail } from './views/MediaDetail';
 import { Import } from './views/Import';
 import { Settings } from './views/Settings';
+// FIX: Changed to lowercase 'searchoverlay' to match your file system
+import { SearchOverlay } from './components/searchoverlay'; 
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -17,18 +19,16 @@ const App: React.FC = () => {
     activeMediaId: null,
     theme: 'dark',
     libraryLayout: 'grid',
-    modalPosition: { 
-        x: Math.max(0, (window.innerWidth - 1024) / 2), 
-        y: 50
-    },
+    modalPosition: { x: 0, y: 0 },
     settings: {
       apiKey: '', proxyUrl: '', enableAi: false, customTypes: [], customStatuses: [], gridColumns: 0, keybinds: { addMedia: 'Ctrl+Alt+n' }
     }
   });
 
-  // New State for the Modal
+  const [detailsPos, setDetailsPos] = useState({ x: 100, y: 50 });
+  const [manualPos, setManualPos] = useState({ x: 100, y: 50 });
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const isDirty = useRef(false);
@@ -41,7 +41,21 @@ const App: React.FC = () => {
     const library = loadLibrary();
     const settings = loadSettings();
     setState(prev => ({ ...prev, library, settings }));
+    const centerX = Math.max(0, (window.innerWidth - 1024) / 2);
+    setDetailsPos({ x: centerX, y: 50 });
+    setManualPos({ x: centerX, y: 50 });
     setIsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            setIsSearchOpen(prev => !prev);
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -62,9 +76,7 @@ const App: React.FC = () => {
     isDirty.current = true;
   }, []);
 
-  // Navigation Handler
   const navigate = (view: AppState['view']) => {
-    // If Settings is clicked, we toggle the modal instead of changing the main view
     if (view === 'settings') {
         setIsSettingsOpen(prev => !prev);
         return;
@@ -101,32 +113,41 @@ const App: React.FC = () => {
   const handleSaveSettings = (newSettings: AppState['settings']) => {
     saveSettings(newSettings);
     setState(prev => ({ ...prev, settings: newSettings }));
-    // Optional: Close modal on save? 
-    // setIsSettingsOpen(false); 
   };
 
   const handleImport = (newItems: MediaItem[]) => {
     updateLibrary([...state.library, ...newItems]);
-    setIsSettingsOpen(false); // Close settings after import
+    setIsSettingsOpen(false);
   };
 
-  // Main Content Render Logic
   const renderContent = () => {
     switch (state.view) {
-      case 'dashboard': return <Dashboard library={state.library} onNavigateToLibrary={() => navigate('library')} />;
-      case 'library': return <Library library={state.library} onSelectItem={handleSelectMedia} onBulkDelete={handleBulkDelete} availableTypes={availableTypes} availableStatuses={availableStatuses} viewMode={state.libraryLayout} onViewModeChange={(mode) => setState(prev => ({ ...prev, libraryLayout: mode }))} gridColumns={state.settings.gridColumns} />;
+      case 'dashboard': return <Dashboard library={state.library} />;
+      case 'library': return <Library 
+          library={state.library} 
+          onSelectItem={handleSelectMedia} 
+          onBulkDelete={handleBulkDelete} 
+          availableTypes={availableTypes} 
+          availableStatuses={availableStatuses} 
+          viewMode={state.libraryLayout} 
+          onViewModeChange={(mode) => setState(prev => ({ ...prev, libraryLayout: mode }))} 
+          gridColumns={state.settings.gridColumns} 
+          onOpenSearch={() => setIsSearchOpen(true)} 
+      />;
       case 'import': return <Import onImport={handleImport} availableTypes={availableTypes} availableStatuses={availableStatuses} />;
-      default: return <Dashboard library={state.library} onNavigateToLibrary={() => navigate('library')} />;
+      default: return <Dashboard library={state.library} />;
     }
   };
 
   return (
     <Layout currentView={isSettingsOpen ? 'settings' : state.view} onNavigate={navigate} onManualAdd={handleManualAdd}>
-      
-      {/* The Main View behind the modal */}
       {renderContent()}
-      
-      {/* 1. Media Detail Modal */}
+      <SearchOverlay 
+         isOpen={isSearchOpen} 
+         onClose={() => setIsSearchOpen(false)}
+         library={state.library}
+         onSelect={handleSelectMedia}
+      />
       {state.activeMediaId && (
           <MediaDetail 
               item={state.library.find(i => i.id === state.activeMediaId)!} 
@@ -136,14 +157,12 @@ const App: React.FC = () => {
               onDelete={handleDeleteMedia}
               availableTypes={availableTypes}
               availableStatuses={availableStatuses}
-              initialPosition={state.modalPosition}
-              onPositionSave={(pos) => setState(prev => ({ ...prev, modalPosition: pos }))}
+              initialPosition={isCreatingNew ? manualPos : detailsPos}
+              onPositionSave={(pos) => isCreatingNew ? setManualPos(pos) : setDetailsPos(pos)}
               startInEditMode={openInEditMode}
               isNewEntry={isCreatingNew}
           />
       )}
-
-      {/* 2. Settings Modal */}
       {isSettingsOpen && (
           <Settings 
             settings={state.settings}
@@ -152,7 +171,7 @@ const App: React.FC = () => {
             onClose={() => setIsSettingsOpen(false)}
             onImport={handleImport}
             onClearLibrary={() => {
-                updateLibrary([]); // Clears the entire library state
+                updateLibrary([]); 
                 alert("Library cleared successfully.");
             }}
           />
