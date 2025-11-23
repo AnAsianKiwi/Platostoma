@@ -1,5 +1,5 @@
 
-import { MediaItem, DEFAULT_MEDIA_TYPES, DEFAULT_MEDIA_STATUSES } from '../types';
+import { MediaItem, DEFAULT_MEDIA_TYPES } from '../types';
 
 const STORAGE_KEY = 'osmanthus_library_v2';
 const SETTINGS_KEY = 'osmanthus_settings_v2';
