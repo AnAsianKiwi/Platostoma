@@ -193,7 +193,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ library }) => {
                       innerRadius={95}
                       outerRadius={115}
                       paddingAngle={2}
-                      // @ts-ignore - Recharts types mismatch for activeIndex
+                      
                       activeIndex={activeIndex}
                       activeShape={renderActiveShape}
                       

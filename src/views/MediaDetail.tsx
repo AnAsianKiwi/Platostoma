@@ -26,8 +26,6 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
   const [formData, setFormData] = useState<MediaItem>(item);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isEditing, setIsEditing] = useState(startInEditMode);
-  
-  // NEW: Image Zoom State
   const [isImageZoomed, setIsImageZoomed] = useState(false);
 
   const modalRef = useRef<HTMLDivElement>(null);
@@ -80,15 +78,13 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+    // FIX: Raised z-index to z-[100]
+    <div className="fixed inset-0 z-[100] pointer-events-none">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto" onClick={isEditing ? undefined : onClose} />
       
-      {/* NEW: Image Zoom Overlay */}
       {isImageZoomed && (
-        <div 
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out pointer-events-auto animate-in fade-in duration-200"
-            onClick={() => setIsImageZoomed(false)}
-        >
+        // FIX: Zoom needs to be even higher > 100
+        <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out pointer-events-auto animate-in fade-in duration-200" onClick={() => setIsImageZoomed(false)}>
             <img src={formData.coverUrl} alt={formData.title} className="max-h-full max-w-full object-contain shadow-2xl" />
         </div>
       )}
@@ -96,7 +92,7 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
       <div ref={modalRef} className="absolute w-full max-w-5xl bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] h-auto animate-in zoom-in-95 duration-200 pointer-events-auto select-text">
         <div onMouseDown={handleDragStart} className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 sticky top-0 z-10 flex-shrink-0 cursor-move active:cursor-move select-none">
           <div className="flex items-center gap-3 pointer-events-none">
-             <h2 className="text-xl font-bold text-white font-sans">{isNewEntry ? 'Add New Media' : (isEditing ? 'Edit Details' : 'Details')}</h2>
+             <h2 className="text-xl font-bold text-white font-sans">{isNewEntry ? 'Add Media' : (isEditing ? 'Edit Details' : 'Details')}</h2>
              {!isEditing && <span className={`text-xs font-bold px-2.5 py-0.5 rounded uppercase tracking-wider border ${getStatusColor(item.status)}`}>{item.status}</span>}
           </div>
           <div className="flex items-center gap-2" onMouseDown={e => e.stopPropagation()}>
@@ -115,21 +111,11 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
         <div className="flex-1 overflow-y-auto p-6 relative [scrollbar-gutter:stable]" onMouseDown={e => e.stopPropagation()}>
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
              <div className="lg:col-span-1 flex flex-col gap-4">
-               <div 
-                 className={`aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 relative group flex items-center justify-center flex-shrink-0 ${isEditing ? 'cursor-pointer hover:border-osmanthus-500' : ''}`}
-                 // Trigger Zoom if NOT editing
-                 onClick={isEditing ? triggerFileInput : () => formData.coverUrl && setIsImageZoomed(true)}
-               >
+               <div className={`aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 relative group flex items-center justify-center flex-shrink-0 ${isEditing ? 'cursor-pointer hover:border-osmanthus-500' : ''}`} onClick={isEditing ? triggerFileInput : () => formData.coverUrl && setIsImageZoomed(true)}>
                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                 
                  {formData.coverUrl ? (
                    <>
-                      {/* Added will-change-transform to fix blur */}
-                      <img 
-                        src={formData.coverUrl} 
-                        alt={formData.title} 
-                        className={`w-full h-full object-cover select-none will-change-transform ${!isEditing ? 'cursor-zoom-in hover:scale-105 transition-transform duration-500' : ''}`} 
-                      />
+                      <img src={formData.coverUrl} alt={formData.title} className={`w-full h-full object-cover select-none will-change-transform ${!isEditing ? 'cursor-zoom-in hover:scale-105 transition-transform duration-500' : ''}`} />
                       {isEditing && <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div className="bg-osmanthus-600 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2"><Icons.Import className="w-4 h-4" /> Change Image</div></div>}
                    </>
                  ) : (
@@ -137,21 +123,14 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                       {isEditing ? <div className="bg-osmanthus-600/20 text-osmanthus-400 border border-osmanthus-500/50 px-4 py-3 rounded-lg flex flex-col items-center"><Icons.Import className="w-8 h-8 mb-2" /><span className="font-bold text-sm uppercase tracking-wide">Click to Upload</span></div> : <div className="flex flex-col items-center opacity-40"><Icons.Dashboard className="w-16 h-16 mb-2" /><span className="font-bold text-xs uppercase tracking-widest border-2 border-slate-600 border-dashed p-2 rounded">No Image</span></div>}
                    </div>
                  )}
-                 
-                 {!isEditing && formData.sourceUrl && (
-                    <div className="absolute bottom-3 right-3 select-none" onClick={e => e.stopPropagation()}>
-                      <a href={formData.sourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-black/70 backdrop-blur hover:bg-osmanthus-600 text-white rounded-lg text-xs font-medium transition-all border border-white/10"><Icons.ExternalLink className="w-3 h-3" /> Open Source</a>
-                    </div>
-                 )}
+                 {!isEditing && formData.sourceUrl && ( <div className="absolute bottom-3 right-3 select-none" onClick={e => e.stopPropagation()}><a href={formData.sourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-black/70 backdrop-blur hover:bg-osmanthus-600 text-white rounded-lg text-xs font-medium transition-all border border-white/10"><Icons.ExternalLink className="w-3 h-3" /> Open Source</a></div> )}
                </div>
-               
                {isEditing && (
                  <div className="space-y-3 p-4 bg-slate-800/30 rounded-xl border border-slate-700 flex-shrink-0">
                    <div><label className="block text-xs font-bold text-slate-400 mb-1 uppercase flex items-center gap-2"><Icons.Link className="w-3.5 h-3.5" /> Cover Image URL</label><input type="text" value={formData.coverUrl || ''} onChange={(e) => handleChange('coverUrl', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:border-osmanthus-500 outline-none transition-colors font-sans" placeholder="http://... or upload above" /></div>
                    <div><label className="block text-xs font-bold text-slate-400 mb-1 uppercase flex items-center gap-2"><Icons.ExternalLink className="w-3.5 h-3.5" /> Tracking / Source URL</label><input type="text" placeholder="https://..." value={formData.sourceUrl || ''} onChange={(e) => handleChange('sourceUrl', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:border-osmanthus-500 outline-none transition-colors font-sans" /></div>
                  </div>
                )}
-
                {!isEditing && (
                  <div className="space-y-3">
                     <div className="flex justify-between items-center p-3 bg-slate-800/50 rounded-lg border border-slate-800"><span className="text-xs text-slate-400 uppercase font-bold tracking-wide">Format</span><span className="text-sm font-medium text-white">{formData.type}</span></div>
@@ -173,19 +152,16 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                          </div>
                        )}
                     </div>
-
                     <div className="mb-6">
                       <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2 select-none"><Icons.StickyNote className="w-3 h-3" /> Synopsis</h3>
                       <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-800 text-slate-200 leading-relaxed whitespace-pre-wrap text-lg shadow-inner select-text">{formData.description || <span className="text-slate-600 italic">No description provided.</span>}</div>
                     </div>
-
                     {formData.tags && formData.tags.length > 0 && (
                       <div className="mb-6">
                         <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2 select-none"><Icons.Hash className="w-3 h-3" /> Tags</h3>
                         <div className="flex flex-wrap gap-2">{formData.tags.map(tag => <span key={tag} className="px-3 py-1 bg-slate-800 text-slate-300 text-sm rounded-full border border-slate-700">{tag}</span>)}</div>
                       </div>
                     )}
-
                     <div className="mt-6 space-y-6">
                         <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
                            <div className="flex-1 min-w-[200px]">
@@ -198,7 +174,6 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                               <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700"><Icons.Star className={`w-5 h-5 ${formData.rating > 0 ? 'text-yellow-500 fill-yellow-500' : 'text-slate-600'}`} /><span className={`text-lg font-bold ${formData.rating > 0 ? 'text-white' : 'text-slate-600'}`}>{formData.rating > 0 ? formData.rating : '-'}</span></div>
                            </div>
                         </div>
-                        
                         {formData.notes && (
                           <div>
                             <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2 select-none"><Icons.Edit className="w-3 h-3" /> Notes</h3>
@@ -225,7 +200,7 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                        <div className="flex-shrink-0"><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Notes</label><AutoResizeTextarea className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-base focus:border-osmanthus-500 outline-none font-sans" value={formData.notes || ''} onChange={(e) => handleChange('notes', e.target.value)} placeholder="Private notes..." minHeight="40px" /></div>
                        <div className="mt-auto flex-shrink-0 pt-4 border-t border-slate-800 flex items-center justify-between select-none">
                           {!isNewEntry ? ( <button type="button" onClick={handleDeleteClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${confirmDelete ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-transparent text-red-400 border-red-900/50 hover:bg-red-900/20'}`}><Icons.Trash className="w-4 h-4" /> {confirmDelete ? 'Confirm Delete?' : 'Delete'}</button> ) : ( <div></div> )}
-                          <button type="submit" className="flex items-center gap-2 px-8 py-2.5 bg-osmanthus-600 hover:bg-osmanthus-500 text-white rounded-lg font-bold shadow-lg shadow-osmanthus-900/20 transition-all"><Icons.Save className="w-4 h-4" /> Save Changes</button>
+                          <button type="submit" className="flex items-center gap-2 px-8 py-2.5 bg-osmanthus-600 hover:bg-osmanthus-500 text-white rounded-lg font-bold shadow-lg shadow-osmanthus-900/20 transition-all"><Icons.Save className="w-4 h-4" /> {isNewEntry ? "Done" : "Save Changes"}</button>
                        </div>
                  </form>
                )}
