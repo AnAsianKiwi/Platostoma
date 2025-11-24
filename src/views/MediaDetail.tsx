@@ -1,117 +1,139 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { MediaItem } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useDataStore } from '../store/useDataStore';
+import { useUIStore } from '../store/useUIStore';
 import { Icons } from '../components/Icons';
+import { DEFAULT_MEDIA_TYPES, DEFAULT_MEDIA_STATUSES, MediaItem } from '../types';
 
-interface MediaDetailsProps {
-  item: MediaItem;
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (item: MediaItem) => void;
-  onDelete: (id: string) => void;
-  availableTypes: string[];
-  availableStatuses: string[];
-  initialPosition: { x: number, y: number };
-  onPositionSave: (pos: { x: number, y: number }) => void;
-  startInEditMode?: boolean;
-  isNewEntry?: boolean;
-}
+// UI Components
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Textarea } from '../components/ui/Textarea';
+import { Select } from '../components/ui/Select';
+import { Badge } from '../components/ui/Badge';
 
-const AutoResizeTextarea = ({ value, onChange, placeholder, className, minHeight = "50px" }: { value: string; onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; placeholder?: string; className?: string; minHeight?: string; }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => { if (textareaRef.current) { textareaRef.current.style.height = 'auto'; const scrollHeight = textareaRef.current.scrollHeight; textareaRef.current.style.height = `${Math.max(scrollHeight, parseInt(minHeight))}px`; } }, [value, minHeight]);
-  return <textarea ref={textareaRef} className={`${className} resize-y overflow-hidden font-sans select-text`} style={{ minHeight }} value={value} onChange={onChange} placeholder={placeholder} />;
-};
+export const MediaDetail: React.FC = () => {
+  const { library, settings, addItem, updateItem, deleteItem } = useDataStore();
+  const { activeMediaId, tempNewItem, closeDetail, triggerSaveAnimation, setView, addToast } = useUIStore(); // <--- Get addToast
 
-export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose, onSave, onDelete, availableTypes, availableStatuses, initialPosition, onPositionSave, startInEditMode = false, isNewEntry = false }) => {
-  const [formData, setFormData] = useState<MediaItem>(item);
+  const itemToEdit = tempNewItem || library.find(i => i.id === activeMediaId);
+  const isNewEntry = !!tempNewItem;
+
+  const availableTypes = useMemo(() => [...DEFAULT_MEDIA_TYPES, ...settings.customTypes].sort(), [settings.customTypes]);
+  const availableStatuses = useMemo(() => [...DEFAULT_MEDIA_STATUSES, ...settings.customStatuses], [settings.customStatuses]);
+
+  const [formData, setFormData] = useState<MediaItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [isEditing, setIsEditing] = useState(startInEditMode);
+  const [isEditing, setIsEditing] = useState(false);
   const [isImageZoomed, setIsImageZoomed] = useState(false);
-
-  const modalRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setFormData(item); setConfirmDelete(false); setIsEditing(startInEditMode); }, [item, startInEditMode]);
-  useEffect(() => { if (modalRef.current) { modalRef.current.style.left = `${initialPosition.x}px`; modalRef.current.style.top = `${initialPosition.y}px`; } }, [isOpen, initialPosition]);
+  useEffect(() => {
+    if (itemToEdit) {
+      setFormData(itemToEdit);
+      setIsEditing(isNewEntry);
+    }
+  }, [itemToEdit, isNewEntry]);
 
-  const handleDragStart = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    const modal = modalRef.current;
-    if (!modal) return;
-    document.body.style.userSelect = 'none'; document.body.style.cursor = 'move';
-    const rect = modal.getBoundingClientRect();
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
-    modal.style.transition = 'none';
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-        moveEvent.preventDefault();
-        let newX = moveEvent.clientX - offsetX;
-        let newY = moveEvent.clientY - offsetY;
-        const winW = window.innerWidth; const winH = window.innerHeight;
-        const maxX = winW - rect.width; const maxY = winH - rect.height;
-        newX = Math.max(0, Math.min(newX, maxX));
-        newY = Math.max(0, Math.min(newY, maxY));
-        modal.style.left = `${newX}px`; modal.style.top = `${newY}px`;
-    };
-    const handleMouseUp = () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.userSelect = ''; document.body.style.cursor = '';
-        modal.style.transition = '';
-        const finalRect = modal.getBoundingClientRect();
-        onPositionSave({ x: finalRect.left, y: finalRect.top });
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+  if (!formData || !itemToEdit) return null;
+
+  const handleChange = (field: keyof MediaItem, value: any) => setFormData(prev => prev ? ({ ...prev, [field]: value }) : null);
+  
+  const handleTagsChange = (value: string) => { 
+    const tags = value.split(',').map(t => t.trim()).filter(t => t !== ''); 
+    handleChange('tags', tags);
   };
 
-  const handleChange = (field: keyof MediaItem, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
-  const handleTagsChange = (value: string) => { const tags = value.split(',').map(t => t.trim()).filter(t => t !== ''); setFormData(prev => ({ ...prev, tags })); };
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave({ ...formData, updatedAt: new Date().toISOString() }); setIsEditing(false); };
-  const handleCancel = () => { if (isNewEntry) { onDelete(item.id); } else { setFormData(item); setIsEditing(false); } };
-  const handleFavoriteToggle = () => { const newItem = { ...formData, favorite: !formData.favorite }; setFormData(newItem); onSave(newItem); };
-  const handleDeleteClick = () => { if (confirmDelete) { onDelete(item.id); } else { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); } };
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { if (typeof reader.result === 'string') { handleChange('coverUrl', reader.result); } }; reader.readAsDataURL(file); } };
-  const triggerFileInput = () => fileInputRef.current?.click();
-  const getStatusColor = (status: string) => { switch(status) { case 'In Progress': return 'text-blue-400 bg-blue-400/10 border-blue-400/20'; case 'Completed': return 'text-green-400 bg-green-400/10 border-green-400/20'; case 'Planning': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20'; case 'Dropped': return 'text-red-400 bg-red-400/10 border-red-400/20'; case 'Paused': return 'text-slate-400 bg-slate-400/10 border-slate-400/20'; default: return 'text-osmanthus-400 bg-osmanthus-400/10 border-osmanthus-400/20'; } };
+  const handleSubmit = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (!formData) return;
+    const finalItem = { ...formData, updatedAt: new Date().toISOString() };
+    
+    if (isNewEntry) { 
+        await addItem(finalItem); 
+        setView('library'); 
+    } else { 
+        await updateItem(finalItem); 
+    }
+    
+    triggerSaveAnimation(finalItem.id);
+    // --- TOAST ---
+    addToast({ type: 'success', message: isNewEntry ? 'Item added to library' : 'Changes saved successfully' });
+    closeDetail();
+  };
 
-  if (!isOpen) return null;
+  const handleCancel = () => { isNewEntry ? closeDetail() : (setFormData(itemToEdit), setIsEditing(false)); };
 
+  const handleFavoriteToggle = async () => { 
+    if (!formData) return;
+    const newItem = { ...formData, favorite: !formData.favorite }; 
+    setFormData(newItem); 
+    await updateItem(newItem);
+    triggerSaveAnimation(newItem.id);
+    // --- TOAST ---
+    addToast({ 
+        type: 'success', 
+        message: newItem.favorite ? 'Added to favorites' : 'Removed from favorites',
+        duration: 2000 
+    });
+  };
+
+  const handleDeleteClick = async () => { 
+    if (confirmDelete && formData) { 
+        if (!isNewEntry) await deleteItem(formData.id); 
+        // --- TOAST ---
+        addToast({ type: 'info', message: 'Item deleted from library' });
+        closeDetail(); 
+    } else { 
+        setConfirmDelete(true); 
+        setTimeout(() => setConfirmDelete(false), 3000); 
+    } 
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => { 
+    const file = e.target.files?.[0]; 
+    if (file) { 
+        const reader = new FileReader(); 
+        reader.onloadend = () => { if (typeof reader.result === 'string') handleChange('coverUrl', reader.result); }; 
+        reader.readAsDataURL(file); 
+    } 
+  };
+
+  // ... (Render remains exactly the same as before) ...
   return (
-    // FIX: Raised z-index to z-[100]
-    <div className="fixed inset-0 z-[100] pointer-events-none">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto" onClick={isEditing ? undefined : onClose} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-12">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={isEditing ? undefined : closeDetail} />
       
       {isImageZoomed && (
-        // FIX: Zoom needs to be even higher > 100
-        <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out pointer-events-auto animate-in fade-in duration-200" onClick={() => setIsImageZoomed(false)}>
+        <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-8 cursor-zoom-out animate-in fade-in duration-200" onClick={() => setIsImageZoomed(false)}>
             <img src={formData.coverUrl} alt={formData.title} className="max-h-full max-w-full object-contain shadow-2xl" />
         </div>
       )}
 
-      <div ref={modalRef} className="absolute w-full max-w-5xl bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] h-auto animate-in zoom-in-95 duration-200 pointer-events-auto select-text">
-        <div onMouseDown={handleDragStart} className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 sticky top-0 z-10 flex-shrink-0 cursor-move active:cursor-move select-none">
+      <div className="w-full max-w-5xl bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-full h-auto animate-in zoom-in-95 duration-200 z-10 relative">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 sticky top-0 z-10 flex-shrink-0 select-none">
           <div className="flex items-center gap-3 pointer-events-none">
              <h2 className="text-xl font-bold text-white font-sans">{isNewEntry ? 'Add Media' : (isEditing ? 'Edit Details' : 'Details')}</h2>
-             {!isEditing && <span className={`text-xs font-bold px-2.5 py-0.5 rounded uppercase tracking-wider border ${getStatusColor(item.status)}`}>{item.status}</span>}
+             {!isEditing && <Badge label={formData.status} />}
           </div>
-          <div className="flex items-center gap-2" onMouseDown={e => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
              {!isEditing ? (
                 <>
-                   <button onClick={handleFavoriteToggle} className={`p-2 rounded-lg hover:bg-slate-800 transition-colors ${formData.favorite ? 'text-red-500' : 'text-slate-400 hover:text-red-400'}`} title="Toggle Favorite"><Icons.Star className={`w-5 h-5 ${formData.favorite ? 'fill-current' : ''}`} /></button>
-                   <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm transition-colors border border-slate-700"><Icons.Edit className="w-4 h-4" /> Edit</button>
+                   <Button size="icon" variant="ghost" onClick={handleFavoriteToggle} className={formData.favorite ? 'text-red-500' : ''}><Icons.Star className={`w-5 h-5 ${formData.favorite ? 'fill-current' : ''}`} /></Button>
+                   <Button size="sm" variant="secondary" onClick={() => setIsEditing(true)}><Icons.Edit className="w-4 h-4" /> Edit</Button>
                 </>
              ) : (
-               <button onClick={handleCancel} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${isNewEntry ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-700 shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>Cancel</button>
+               <Button size="sm" variant={isNewEntry ? "secondary" : "ghost"} onClick={handleCancel}>Cancel</Button>
              )}
-             {!isNewEntry && <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"><Icons.X className="w-5 h-5" /></button>}
+             {!isNewEntry && <Button size="icon" variant="ghost" onClick={closeDetail}><Icons.X className="w-5 h-5" /></Button>}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 relative [scrollbar-gutter:stable]" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex-1 overflow-y-auto p-6 [scrollbar-gutter:stable]">
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+             {/* Left Column (Image) */}
              <div className="lg:col-span-1 flex flex-col gap-4">
-               <div className={`aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 relative group flex items-center justify-center flex-shrink-0 ${isEditing ? 'cursor-pointer hover:border-osmanthus-500' : ''}`} onClick={isEditing ? triggerFileInput : () => formData.coverUrl && setIsImageZoomed(true)}>
+               <div className={`aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 relative group flex items-center justify-center flex-shrink-0 ${isEditing ? 'cursor-pointer hover:border-osmanthus-500' : ''}`} onClick={isEditing ? () => fileInputRef.current?.click() : () => formData.coverUrl && setIsImageZoomed(true)}>
                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                  {formData.coverUrl ? (
                    <>
@@ -125,10 +147,11 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                  )}
                  {!isEditing && formData.sourceUrl && ( <div className="absolute bottom-3 right-3 select-none" onClick={e => e.stopPropagation()}><a href={formData.sourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 bg-black/70 backdrop-blur hover:bg-osmanthus-600 text-white rounded-lg text-xs font-medium transition-all border border-white/10"><Icons.ExternalLink className="w-3 h-3" /> Open Source</a></div> )}
                </div>
+               
                {isEditing && (
                  <div className="space-y-3 p-4 bg-slate-800/30 rounded-xl border border-slate-700 flex-shrink-0">
-                   <div><label className="block text-xs font-bold text-slate-400 mb-1 uppercase flex items-center gap-2"><Icons.Link className="w-3.5 h-3.5" /> Cover Image URL</label><input type="text" value={formData.coverUrl || ''} onChange={(e) => handleChange('coverUrl', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:border-osmanthus-500 outline-none transition-colors font-sans" placeholder="http://... or upload above" /></div>
-                   <div><label className="block text-xs font-bold text-slate-400 mb-1 uppercase flex items-center gap-2"><Icons.ExternalLink className="w-3.5 h-3.5" /> Tracking / Source URL</label><input type="text" placeholder="https://..." value={formData.sourceUrl || ''} onChange={(e) => handleChange('sourceUrl', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:border-osmanthus-500 outline-none transition-colors font-sans" /></div>
+                   <Input label="Cover Image URL" value={formData.coverUrl || ''} onChange={(e) => handleChange('coverUrl', e.target.value)} placeholder="http://... or upload" icon={<Icons.Link className="w-3.5 h-3.5" />} />
+                   <Input label="Source URL" value={formData.sourceUrl || ''} onChange={(e) => handleChange('sourceUrl', e.target.value)} placeholder="https://..." icon={<Icons.ExternalLink className="w-3.5 h-3.5" />} />
                  </div>
                )}
                {!isEditing && (
@@ -139,6 +162,7 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                )}
              </div>
 
+             {/* Right Column (Details) */}
              <div className="lg:col-span-2 flex flex-col">
                {!isEditing ? (
                  <div className="flex flex-col animate-in fade-in duration-300 select-text">
@@ -184,23 +208,46 @@ export const MediaDetail: React.FC<MediaDetailsProps> = ({ item, isOpen, onClose
                  </div>
                ) : (
                  <form onSubmit={handleSubmit} className="flex flex-col gap-4 animate-in fade-in duration-300 h-full">
-                       <div className="flex-shrink-0"><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Title</label><input className="w-full bg-transparent border-b-2 border-slate-700 px-0 py-2 text-white text-xl font-bold focus:border-osmanthus-500 outline-none transition-colors placeholder:text-slate-700 font-sans" value={formData.title} onChange={(e) => handleChange('title', e.target.value)} placeholder="Enter title..." /></div>
+                       <div className="flex-shrink-0">
+                           <label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Title</label>
+                           <input className="w-full bg-transparent border-b-2 border-slate-700 px-0 py-2 text-white text-xl font-bold focus:border-osmanthus-500 outline-none transition-colors placeholder:text-slate-700 font-sans" value={formData.title} onChange={(e) => handleChange('title', e.target.value)} placeholder="Enter title..." />
+                       </div>
+                       
                        <div className="flex-shrink-0 grid grid-cols-2 gap-4">
-                          <div><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Author / Artist</label><input className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm focus:border-osmanthus-500 outline-none transition-colors font-sans" value={formData.author || ''} onChange={(e) => handleChange('author', e.target.value)} /></div>
-                          <div><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Original Title</label><input className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm focus:border-osmanthus-500 outline-none transition-colors font-sans" value={formData.originalTitle || ''} onChange={(e) => handleChange('originalTitle', e.target.value)} /></div>
+                          <Input label="Author / Artist" value={formData.author || ''} onChange={(e) => handleChange('author', e.target.value)} />
+                          <Input label="Original Title" value={formData.originalTitle || ''} onChange={(e) => handleChange('originalTitle', e.target.value)} />
                        </div>
-                       <div className="flex-shrink-0"><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Synopsis</label><AutoResizeTextarea className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white text-base focus:border-osmanthus-500 outline-none leading-relaxed font-sans" value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} placeholder="Synopsis..." minHeight="80px" /></div>
-                       <div className="flex-shrink-0"><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Tags</label><input className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm focus:border-osmanthus-500 outline-none font-sans" value={formData.tags.join(', ')} onChange={(e) => handleTagsChange(e.target.value)} placeholder="Fantasy, Action..." /></div>
+                       
+                       <Textarea label="Synopsis" value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} placeholder="Synopsis..." minHeight="80px" />
+                       <Input label="Tags" value={formData.tags.join(', ')} onChange={(e) => handleTagsChange(e.target.value)} placeholder="Fantasy, Action..." />
+                       
                        <div className="flex-shrink-0 grid grid-cols-4 gap-3 bg-slate-800/30 p-3 rounded-xl border border-slate-800">
-                          <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 select-none">Type</label><select className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:border-osmanthus-500 outline-none appearance-none font-sans" value={formData.type} onChange={(e) => handleChange('type', e.target.value)}><option value="">-</option>{availableTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                          <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 select-none">Status</label><select className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:border-osmanthus-500 outline-none appearance-none font-sans" value={formData.status} onChange={(e) => handleChange('status', e.target.value)}><option value="">-</option>{availableStatuses.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                          <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 select-none">Progress</label><div className="flex items-center gap-1"><input type="number" className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:border-osmanthus-500 outline-none font-sans" value={formData.progress} onChange={(e) => handleChange('progress', parseInt(e.target.value) || 0)} /><span className="text-slate-500 select-none">/</span><input type="number" className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:border-osmanthus-500 outline-none font-sans" value={formData.total || ''} placeholder="?" onChange={(e) => handleChange('total', e.target.value ? parseInt(e.target.value) : undefined)} /></div></div>
-                          <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1 select-none">Rating <Icons.Star className="w-3 h-3 text-yellow-500" /></label><input type="number" min="0" max="10" step="0.1" className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm font-bold focus:border-osmanthus-500 outline-none font-sans" value={formData.rating} onChange={(e) => handleChange('rating', parseFloat(e.target.value) || 0)} /></div>
+                          <Select label="Type" options={availableTypes} placeholder="-" value={formData.type} onChange={(e) => handleChange('type', e.target.value)} />
+                          <Select label="Status" options={availableStatuses} placeholder="-" value={formData.status} onChange={(e) => handleChange('status', e.target.value)} />
+                          
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 select-none">Progress</label>
+                            <div className="flex items-center gap-1">
+                                <Input type="number" className="!px-2 !py-1.5" value={formData.progress} onChange={(e) => handleChange('progress', parseInt(e.target.value) || 0)} />
+                                <span className="text-slate-500 select-none">/</span>
+                                <Input type="number" className="!px-2 !py-1.5" value={formData.total || ''} placeholder="?" onChange={(e) => handleChange('total', e.target.value ? parseInt(e.target.value) : undefined)} />
+                            </div>
+                          </div>
+                          
+                          <Input type="number" label="Rating" min={0} max={10} step={0.1} className="font-bold" value={formData.rating} onChange={(e) => handleChange('rating', parseFloat(e.target.value) || 0)} />
                        </div>
-                       <div className="flex-shrink-0"><label className="block text-xs font-bold text-slate-500 mb-1 uppercase select-none">Notes</label><AutoResizeTextarea className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-base focus:border-osmanthus-500 outline-none font-sans" value={formData.notes || ''} onChange={(e) => handleChange('notes', e.target.value)} placeholder="Private notes..." minHeight="40px" /></div>
+                       
+                       <Textarea label="Notes" value={formData.notes || ''} onChange={(e) => handleChange('notes', e.target.value)} placeholder="Private notes..." minHeight="40px" />
+                       
                        <div className="mt-auto flex-shrink-0 pt-4 border-t border-slate-800 flex items-center justify-between select-none">
-                          {!isNewEntry ? ( <button type="button" onClick={handleDeleteClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${confirmDelete ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-transparent text-red-400 border-red-900/50 hover:bg-red-900/20'}`}><Icons.Trash className="w-4 h-4" /> {confirmDelete ? 'Confirm Delete?' : 'Delete'}</button> ) : ( <div></div> )}
-                          <button type="submit" className="flex items-center gap-2 px-8 py-2.5 bg-osmanthus-600 hover:bg-osmanthus-500 text-white rounded-lg font-bold shadow-lg shadow-osmanthus-900/20 transition-all"><Icons.Save className="w-4 h-4" /> {isNewEntry ? "Done" : "Save Changes"}</button>
+                          {!isNewEntry ? ( 
+                              <Button type="button" variant={confirmDelete ? "danger" : "ghost"} onClick={handleDeleteClick} className={confirmDelete ? "" : "text-red-400 hover:text-red-300 hover:bg-red-900/20"}>
+                                  <Icons.Trash className="w-4 h-4" /> {confirmDelete ? 'Confirm Delete?' : 'Delete'}
+                              </Button> 
+                          ) : ( <div></div> )}
+                          <Button type="submit" variant="primary">
+                              <Icons.Save className="w-4 h-4" /> {isNewEntry ? "Done" : "Save Changes"}
+                          </Button>
                        </div>
                  </form>
                )}

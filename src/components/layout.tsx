@@ -1,25 +1,32 @@
 import React, { useState } from 'react';
 import { Icons } from './Icons';
-import { ViewType } from '../types';
+import { useUIStore } from '../store/useUIStore';
 
-interface LayoutProps {
-  children: React.ReactNode;
-  currentView: ViewType;
-  onNavigate: (view: ViewType) => void;
-  onManualAdd: () => void;
-}
+// Note: No props interface needed anymore
+export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { 
+    currentView, 
+    setView, 
+    startManualAdd, 
+    toggleSettings, 
+    isSettingsOpen 
+  } = useUIStore();
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  currentView, 
-  onNavigate,
-  onManualAdd
-}) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // --- DIMENSIONS ---
   const WIDTH_COLLAPSED = 'w-20';
   const WIDTH_EXPANDED = 'w-60';
+
+  const handleNavigate = (view: string) => {
+      if (view === 'settings') {
+          toggleSettings();
+      } else {
+          // If settings are open, close them when navigating to a view
+          if (isSettingsOpen && view !== 'settings') toggleSettings();
+          setView(view as any);
+      }
+  };
 
   const NavItem = ({ 
     icon: Icon, 
@@ -117,19 +124,19 @@ export const Layout: React.FC<LayoutProps> = ({
 
         <div className="flex-1 pt-10 pb-2 overflow-x-hidden overflow-y-auto [scrollbar-width:none]">
           <nav>
-            <NavItem icon={Icons.Library} label="Library" isActive={currentView === 'library'} onClick={() => onNavigate('library')} />
-            <NavItem icon={Icons.Dashboard} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => onNavigate('dashboard')} />
-            <NavItem icon={Icons.Import} label="Import Media" isActive={currentView === 'import'} onClick={() => onNavigate('import')} />
+            <NavItem icon={Icons.Library} label="Library" isActive={currentView === 'library'} onClick={() => handleNavigate('library')} />
+            <NavItem icon={Icons.Dashboard} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => handleNavigate('dashboard')} />
+            <NavItem icon={Icons.Import} label="Import Media" isActive={currentView === 'import'} onClick={() => handleNavigate('import')} />
           </nav>
         </div>
 
         <div className="py-2 border-t border-slate-800/50 flex-shrink-0 overflow-hidden space-y-1">
-           <NavItem icon={Icons.Plus} label="Manual Add" onClick={onManualAdd} variant="action" />
-           <NavItem icon={Icons.Settings} label="Settings" isActive={currentView === 'settings'} onClick={() => onNavigate('settings')} />
+           <NavItem icon={Icons.Plus} label="Manual Add" onClick={startManualAdd} variant="action" />
+           <NavItem icon={Icons.Settings} label="Settings" isActive={isSettingsOpen} onClick={() => handleNavigate('settings')} />
         </div>
       </aside>
 
-      {/* MAIN CONTENT - CHANGED: removed 'overflow-y-scroll' */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 h-full min-w-0 relative bg-slate-950 overflow-hidden">
          {children}
       </main>
