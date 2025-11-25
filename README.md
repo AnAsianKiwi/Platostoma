@@ -4,7 +4,7 @@ Simple tool to organise your read and watch list. You can use it for movies, TV 
 One app for everything, no need to go to multiple trackers.
 
 **Important**
-Will not show you where to find the media. However there is a option to add your own link.
+- Will not show you where to find the media. However there is a option to add your own link.
 
 **Features**
 - Automatically finds the cover pictures, summaries, and ratings for you from the databases
