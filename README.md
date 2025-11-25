@@ -1,7 +1,11 @@
 # About
 
-Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, books, etc.
+Simple tool to organise your read and watch list.
 One app for everything, no need to go to multiple trackers.
+
+BECAUSE NONE OF THESE FUCKING STUPID ASS OTHER APPS SUPPORT MANHWA OR IS MEDIA SPECFIC SO FUCKING ANNOYING
+AND THEY ARE ALL ONLINE THROUGH THE WEB AND YOU REQUIRE AN ACCOUNT FUCK OFF
+STUPID FUCKING FUCKS
 
 **READ**
 - Will not show you where to find the media. However there is a option to add your own link.
