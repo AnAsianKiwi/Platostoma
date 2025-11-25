@@ -1,36 +1,22 @@
-# Tauri + React + Typescript
-
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
 # About
 
-Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, books, etc. Will NOT show you where to read or find them.
-Supports All forms of readable/watchable media, does NOT include music.
+Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, books, etc.
+One app for everything, no need to go to multiple trackers.
 
-Automatically finds the cover pictures, summaries, and ratings for you from the databases.
-
+**Important**
+Will not show you where to find the media. However there is a option to add your own link.
 
 **Features**
-
-- If you search for something and the app finds two movies with the same name, it will ask you to pick the correct one
+- Automatically finds the cover pictures, summaries, and ratings for you from the databases
+- Pick correct version when searching
 - If you are tracking a anime/etc, the app will tell you if there is also a manga/etc version of it
 - All your data is saved directly on your device. Nothing is sent to the cloud or the internet. No need for an account
-- Track updates for new episodes/chapters using the site you linked
+- Track updates for new episodes/chapters
 - Support for proxies in case you get rate limited
-- Later on might make version for phone
-- Option to self host?
+- Caches images so you will be able to see images even offline
 
 **Optional**
 - AI reccomendation and search
-
-### Ideology
-
-- Everything is stored on device, you will be able to access it offline.
-- One app for everything, no need to go to multiple trackers
 
 
 <div align="center">
