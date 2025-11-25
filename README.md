@@ -3,7 +3,7 @@
 Simple tool to organise your read and watch list. You can use it for movies, TV shows, comics, manga, books, etc.
 One app for everything, no need to go to multiple trackers.
 
-**Important**
+**READ**
 - Will not show you where to find the media. However there is a option to add your own link.
 
 **Features**
